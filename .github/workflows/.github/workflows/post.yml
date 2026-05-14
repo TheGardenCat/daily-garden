@@ -1,0 +1,38 @@
+name: Post to Nostr
+
+on:
+  workflow_dispatch:
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install nostr-tools
+        run: npm install nostr-tools ws
+      - name: Publish
+        run: |
+          node -e "
+          const { finalizeEvent } = require('nostr-tools');
+          const { WebSocket } = require('ws');
+          const privateKey = process.env.NOSTR_PRIVATE_KEY;
+          if (!privateKey) { console.error('No key'); process.exit(1); }
+          const event = finalizeEvent({
+            kind: 1,
+            created_at: Math.floor(Date.now() / 1000),
+            tags: [],
+            content: 'Hello from GitHub Actions! 🌸'
+          }, privateKey);
+          const ws = new WebSocket('wss://relay.damus.io');
+          ws.on('open', () => {
+            ws.send(JSON.stringify(['EVENT', event]));
+            setTimeout(() => ws.close(), 1000);
+            console.log('✅ Published! Event ID:', event.id);
+          });
+          ws.on('error', (e) => console.error('WS error', e));
+          "
+        env:
+          NOSTR_PRIVATE_KEY: ${{ secrets.NOSTR_PRIVATE_KEY }}
