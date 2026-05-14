@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Daily Garden · Nostr Inspiration</title>
+    <script type="module" src="https://cdn.jsdelivr.net/npm/nostr-web-components/dist/nostr-note.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            min-height: 100vh;
+            background: radial-gradient(circle at 10% 30%, #fdf4e3 0%, #e9f5e9 100%);
+            font-family: 'Cormorant Garamond', 'Georgia', serif;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            overflow-x: hidden;
+        }
+        
+        .flower {
+            position: fixed;
+            font-size: 2rem;
+            opacity: 0.3;
+            pointer-events: none;
+            z-index: 0;
+        }
+        
+        .flower-1 { top: 5%; left: 2%; animation: float 20s infinite; }
+        .flower-2 { bottom: 10%; right: 3%; animation: float 25s infinite reverse; }
+        .flower-3 { top: 20%; right: 8%; animation: float 18s infinite; font-size: 1.5rem; }
+        .flower-4 { bottom: 20%; left: 5%; animation: float 22s infinite reverse; }
+        
+        @keyframes float {
+            0%, 100% { transform: translateY(0px) rotate(0deg); }
+            50% { transform: translateY(-20px) rotate(5deg); }
+        }
+        
+        .garden-card {
+            position: relative;
+            z-index: 2;
+            max-width: 750px;
+            width: 90%;
+            background: rgba(255, 255, 255, 0.88);
+            backdrop-filter: blur(12px);
+            border-radius: 56px;
+            padding: 3rem 2rem;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.08), 0 0 0 1px rgba(255, 255, 255, 0.6);
+            text-align: center;
+        }
+        
+        h1 {
+            font-size: 1.8rem;
+            font-weight: 400;
+            letter-spacing: 4px;
+            color: #5a7a4a;
+            margin-bottom: 2rem;
+            text-transform: uppercase;
+        }
+        
+        h1::before { content: "🌿 "; opacity: 0.7; }
+        h1::after { content: " 🌸"; opacity: 0.7; }
+        
+        nostr-note {
+            display: block;
+            margin: 2rem 0;
+        }
+        
+        nostr-note::part(content) {
+            font-size: 2.1rem;
+            line-height: 1.4;
+            color: #2c4a2a;
+            font-style: italic;
+            font-weight: 500;
+        }
+        
+        nostr-note::part(name) { display: none; }
+        nostr-note::part(time) { display: none; }
+        
+        .footer {
+            margin-top: 2.5rem;
+            font-size: 0.8rem;
+            color: #9baf8b;
+            border-top: 1px solid rgba(90, 122, 74, 0.2);
+            padding-top: 1.5rem;
+        }
+        
+        .mirror-btn {
+            background: rgba(90, 122, 74, 0.15);
+            border: 1px solid rgba(90, 122, 74, 0.3);
+            padding: 0.6rem 1.2rem;
+            border-radius: 40px;
+            font-family: inherit;
+            font-size: 0.85rem;
+            color: #5a7a4a;
+            cursor: pointer;
+            margin-top: 1rem;
+        }
+        
+        .mirror-btn:hover {
+            background: rgba(90, 122, 74, 0.3);
+        }
+        
+        [slot="loading"] {
+            font-size: 1.2rem;
+            color: #8aa87d;
+            padding: 2rem;
+            animation: pulse 1.5s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 0.6; }
+            50% { opacity: 1; }
+        }
+        
+        @media (max-width: 600px) {
+            .garden-card { padding: 2rem 1.5rem; }
+            nostr-note::part(content) { font-size: 1.6rem; }
+        }
+    </style>
+</head>
+<body>
+    <div class="flower flower-1">🌼</div>
+    <div class="flower flower-2">🌻</div>
+    <div class="flower flower-3">🌺</div>
+    <div class="flower flower-4">🌸</div>
+    
+    <div class="garden-card">
+        <h1>daily garden</h1>
+        
+        <!-- IMPORTANT: Replace YOUR_NPUB_HERE with your actual npub from Part 2 -->
+        <nostr-note 
+            id="daily-inspiration"
+            relays="wss://relay.damus.io wss://relay.primal.net wss://nos.lol"
+            author="npub1jwh8junfhekln9qm7h4ap2pgz7j7r98l38x20z9phds8uwjq4l2qfzqwwu"
+            kind="1"
+            limit="1"
+        >
+            <div slot="loading">🌱 the garden is waking up...</div>
+            <div slot="empty">✨ today's wisdom will appear soon</div>
+        </nostr-note>
+        
+        <button id="mirror-btn" class="mirror-btn" style="display: none;">🌸 mirror to my garden</button>
+        
+        <div class="footer">
+            🌙 refreshed daily at midnight PT
+        </div>
+    </div>
+    
+    <script>
+        // Replace YOUR_NPUB_HERE will be fixed in the next step
+        const mirrorBtn = document.getElementById('mirror-btn');
+        
+        // Show mirror button only if Nostr extension exists
+        setTimeout(() => {
+            if (window.nostr) {
+                mirrorBtn.style.display = 'inline-block';
+                mirrorBtn.onclick = async () => {
+                    const quoteEl = document.querySelector('nostr-note');
+                    let quote = '';
+                    try {
+                        const shadow = quoteEl.shadowRoot;
+                        const content = shadow?.querySelector('.note-content');
+                        if (content) quote = content.innerText;
+                    } catch(e) {}
+                    
+                    if (!quote) {
+                        alert('Wait for the quote to load first');
+                        return;
+                    }
+                    
+                    const pubkey = await window.nostr.getPublicKey();
+                    const event = {
+                        kind: 1,
+                        created_at: Math.floor(Date.now() / 1000),
+                        tags: [["t", "dailyinspiration"]],
+                        content: `🌸 mirrored from daily garden:\n\n${quote}`
+                    };
+                    const signed = await window.nostr.signEvent(event);
+                    
+                    // Simple publish
+                    const relays = ['wss://relay.damus.io'];
+                    const ws = new WebSocket(relays[0]);
+                    ws.onopen = () => {
+                        ws.send(JSON.stringify(["EVENT", signed]));
+                        setTimeout(() => ws.close(), 1000);
+                    };
+                    alert('✨ mirrored to your Nostr feed!');
+                };
+            }
+        }, 1000);
+    </script>
+</body>
+</html>
