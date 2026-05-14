@@ -13,46 +13,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - name: Install
-        run: npm install nostr-tools ws
-      - name: Publish to Nostr
-        run: |
-          node -e "
-          const { finalizeEvent } = require('nostr-tools');
-          const { WebSocket } = require('ws');
-          const priv = process.env.NOSTR_PRIVATE_KEY;
-          if (!priv) { console.error('No private key'); process.exit(1); }
-          
-          const quotes = [
-            'Let today be soft. You don\'t have to earn your rest. 🌸',
-            'Like a seed, you are exactly where you need to be right now. 🌱',
-            'The smallest kind word echoes longer than you know. 🕊️',
-            'Your heart is not too much. It is exactly enough. 💫',
-            'Moss grows without rushing. So do you. 🍃'
-          ];
-          
-          const day = Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 0)) / 86400000);
-          const quote = quotes[day % quotes.length];
-          
-          const event = finalizeEvent({
-            kind: 1,
-            created_at: Math.floor(Date.now() / 1000),
-            tags: [['t', 'dailyinspiration']],
-            content: quote
-          }, priv);
-          
-          const relays = ['wss://relay.damus.io', 'wss://nos.lol'];
-          relays.forEach(async (url) => {
-            const ws = new WebSocket(url);
-            ws.on('open', () => {
-              ws.send(JSON.stringify(['EVENT', event]));
-              setTimeout(() => ws.close(), 1000);
-              console.log('Published to', url);
-            });
-          });
-          
-          console.log('Quote:', quote);
-          console.log('Event ID:', event.id);
-          "
+      - name: Install dependencies
+        run: npm install nostr-tools ws @scure/base
+      - name: Run publisher
+        run: node publisher.js
         env:
           NOSTR_PRIVATE_KEY: ${{ secrets.NOSTR_PRIVATE_KEY }}
