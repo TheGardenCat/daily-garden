@@ -1,0 +1,78 @@
+name: Daily Garden Publisher
+
+on:
+  schedule:
+    - cron: '1 7 * * *'
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Create publisher script
+        run: |
+          cat > publisher.js << 'EOF'
+          const { finalizeEvent, getPublicKey } = require('nostr-tools');
+          const { WebSocket } = require('ws');
+          
+          const privateKey = process.env.NOSTR_PRIVATE_KEY;
+          if (!privateKey) { console.error('No private key'); process.exit(1); }
+          
+          const quotes = [
+            "Let today be soft. You don't have to earn your rest. 🌸",
+            "Like a seed, you are exactly where you need to be right now. 🌱",
+            "The smallest kind word echoes longer than you know. 🕊️",
+            "Your heart is not too much. It is exactly enough. 💫",
+            "Moss grows without rushing. So do you. 🍃",
+            "You are allowed to outgrow what once held you. 🌿",
+            "Today, whisper yes to one small thing you've been avoiding. ✨",
+            "The garden doesn't compare roses to daisies. Neither should you. 🌼",
+            "Breathe. The world will wait for you this once. 🍂",
+            "You have survived every hard day so far. That's a miracle. 🌙"
+          ];
+          
+          const dayOfYear = Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 0)) / 86400000);
+          const quote = quotes[dayOfYear % quotes.length];
+          
+          const event = {
+            kind: 1,
+            created_at: Math.floor(Date.now() / 1000),
+            tags: [["t", "dailyinspiration"]],
+            content: quote,
+          };
+          
+          const signedEvent = finalizeEvent(event, privateKey);
+          
+          const relays = ['wss://relay.damus.io', 'wss://relay.primal.net'];
+          relays.forEach(async (relayUrl) => {
+            const ws = new WebSocket(relayUrl);
+            ws.on('open', () => {
+              ws.send(JSON.stringify(["EVENT", signedEvent]));
+              setTimeout(() => ws.close(), 1000);
+            });
+          });
+          
+          console.log('Published:', quote);
+          EOF
+      - name: Create package.json
+        run: |
+          cat > package.json << 'EOF'
+          {
+            "name": "daily-garden",
+            "version": "1.0.0",
+            "dependencies": {
+              "nostr-tools": "^2.7.0",
+              "ws": "^8.16.0"
+            }
+          }
+          EOF
+      - name: Install and run
+        run: |
+          npm install
+          node publisher.js
+        env:
+          NOSTR_PRIVATE_KEY: ${{ secrets.NOSTR_PRIVATE_KEY }}
