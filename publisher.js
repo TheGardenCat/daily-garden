@@ -3,19 +3,20 @@ const { WebSocket } = require('ws');
 const { bech32 } = require('@scure/base');
 
 // Get private key from environment variable
-let privateKeyHex = process.env.NOSTR_PRIVATE_KEY;
+let privateKeyInput = process.env.NOSTR_PRIVATE_KEY;
 
-if (!privateKeyHex) {
+if (!privateKeyInput) {
     console.error('❌ NOSTR_PRIVATE_KEY not set');
     process.exit(1);
 }
 
-console.log('Raw key format:', privateKeyHex.slice(0, 10) + '...');
+console.log('Raw key format:', privateKeyInput.slice(0, 10) + '...');
 
-// Convert nsec to hex if needed
-if (privateKeyHex.startsWith('nsec1')) {
+// Convert to hex string first
+let privateKeyHex;
+if (privateKeyInput.startsWith('nsec1')) {
     try {
-        const decoded = bech32.decode(privateKeyHex);
+        const decoded = bech32.decode(privateKeyInput);
         const data = bech32.fromWords(decoded.words);
         privateKeyHex = Buffer.from(data).toString('hex');
         console.log('✓ Converted nsec to hex');
@@ -23,17 +24,20 @@ if (privateKeyHex.startsWith('nsec1')) {
         console.error('❌ Failed to convert nsec:', e.message);
         process.exit(1);
     }
-}
-
-// Validate hex length (should be 64 characters)
-if (!/^[0-9a-f]{64}$/i.test(privateKeyHex)) {
-    console.error('❌ Invalid private key format. Length:', privateKeyHex.length);
+} else if (/^[0-9a-f]{64}$/i.test(privateKeyInput)) {
+    privateKeyHex = privateKeyInput;
+    console.log('✓ Using hex key');
+} else {
+    console.error('❌ Unknown key format');
     process.exit(1);
 }
 
-console.log('✓ Valid hex key ready');
+// Convert hex string to Uint8Array (this is what nostr-tools expects)
+const privateKeyBytes = new Uint8Array(Buffer.from(privateKeyHex, 'hex'));
 
-// Daily quotes (you can add more)
+console.log('✓ Private key as bytes (length:', privateKeyBytes.length, ')');
+
+// Daily quotes
 const quotes = [
     "Let today be soft. You don't have to earn your rest. 🌸",
     "Like a seed, you are exactly where you need to be right now. 🌱",
@@ -65,7 +69,8 @@ const event = {
 
 let signedEvent;
 try {
-    signedEvent = finalizeEvent(event, privateKeyHex);
+    // Pass the Uint8Array
+    signedEvent = finalizeEvent(event, privateKeyBytes);
     console.log('✓ Event signed:', signedEvent.id.slice(0, 16) + '...');
 } catch (e) {
     console.error('❌ Failed to sign event:', e.message);
