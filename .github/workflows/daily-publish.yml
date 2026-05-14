@@ -1,9 +1,9 @@
 name: Daily Garden Publisher
 
 on:
+  workflow_dispatch:
   schedule:
     - cron: '1 7 * * *'
-  workflow_dispatch:
 
 jobs:
   publish:
@@ -13,15 +13,65 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - name: Create publisher script
+      - name: Install
         run: |
-          cat > publisher.js << 'EOF'
-          const { finalizeEvent, getPublicKey } = require('nostr-tools');
+          npm install nostr-tools ws
+      - name: Publish to Nostr
+        run: |
+          node << 'EOF'
           const { WebSocket } = require('ws');
           
-          const privateKey = process.env.NOSTR_PRIVATE_KEY;
-          if (!privateKey) { console.error('No private key'); process.exit(1); }
+          // Simple Nostr event signer that works with nsec keys
+          const privateKeyNsec = process.env.NOSTR_PRIVATE_KEY;
+          if (!privateKeyNsec) {
+            console.error('❌ No private key found');
+            process.exit(1);
+          }
           
+          // Convert bech32 (nsec) to hex
+          function bech32ToHex(bech32) {
+            const { bech32 } = require('@scure/base');
+            const decoded = bech32.decode(bech32);
+            const data = new Uint8Array(bech32.fromWords(decoded.words));
+            return Buffer.from(data).toString('hex');
+          }
+          
+          let privateKeyHex;
+          try {
+            if (privateKeyNsec.startsWith('nsec1')) {
+              privateKeyHex = bech32ToHex(privateKeyNsec);
+              console.log('✓ Converted nsec to hex');
+            } else if (privateKeyNsec.length === 64) {
+              privateKeyHex = privateKeyNsec;
+              console.log('✓ Using hex key');
+            } else {
+              throw new Error('Unknown key format');
+            }
+          } catch (e) {
+            console.error('❌ Failed to convert key:', e.message);
+            process.exit(1);
+          }
+          
+          // Simple secp256k1 signer (no external dependency for this part)
+          const crypto = require('crypto');
+          
+          function sha256(data) {
+            return crypto.createHash('sha256').update(data).digest();
+          }
+          
+          function signMessage(messageHex, privateKeyHex) {
+            const { secp256k1 } = require('@noble/curves/secp256k1');
+            const signature = secp256k1.sign(messageHex, privateKeyHex);
+            return Buffer.from(signature.toCompactRawBytes()).toString('hex');
+          }
+          
+          function getPublicKey(privateKeyHex) {
+            const { secp256k1 } = require('@noble/curves/secp256k1');
+            const publicKey = secp256k1.getPublicKey(privateKeyHex);
+            return Buffer.from(publicKey).toString('hex').slice(2);
+          }
+          
+          // Quotes for each day
           const quotes = [
             "Let today be soft. You don't have to earn your rest. 🌸",
             "Like a seed, you are exactly where you need to be right now. 🌱",
@@ -35,44 +85,97 @@ jobs:
             "You have survived every hard day so far. That's a miracle. 🌙"
           ];
           
-          const dayOfYear = Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 0)) / 86400000);
+          // Pick today's quote
+          const now = new Date();
+          const start = new Date(now.getFullYear(), 0, 0);
+          const dayOfYear = Math.floor((now - start) / 86400000);
           const quote = quotes[dayOfYear % quotes.length];
           
+          console.log('📝 Today\'s quote:', quote);
+          console.log('🔑 Public key:', getPublicKey(privateKeyHex).slice(0, 16) + '...');
+          
+          // Create Nostr event
           const event = {
             kind: 1,
             created_at: Math.floor(Date.now() / 1000),
             tags: [["t", "dailyinspiration"]],
-            content: quote,
+            content: quote
           };
           
-          const signedEvent = finalizeEvent(event, privateKey);
+          // Serialize for signing
+          const serialized = JSON.stringify([
+            0,
+            getPublicKey(privateKeyHex),
+            event.created_at,
+            event.kind,
+            event.tags,
+            event.content
+          ]);
           
-          const relays = ['wss://relay.damus.io', 'wss://relay.primal.net'];
-          relays.forEach(async (relayUrl) => {
-            const ws = new WebSocket(relayUrl);
-            ws.on('open', () => {
-              ws.send(JSON.stringify(["EVENT", signedEvent]));
-              setTimeout(() => ws.close(), 1000);
-            });
-          });
+          const hash = sha256(serialized);
+          const signature = signMessage(hash.toString('hex'), privateKeyHex);
           
-          console.log('Published:', quote);
-          EOF
-      - name: Create package.json
-        run: |
-          cat > package.json << 'EOF'
-          {
-            "name": "daily-garden",
-            "version": "1.0.0",
-            "dependencies": {
-              "nostr-tools": "^2.7.0",
-              "ws": "^8.16.0"
+          const finalEvent = {
+            id: hash.toString('hex'),
+            pubkey: getPublicKey(privateKeyHex),
+            created_at: event.created_at,
+            kind: event.kind,
+            tags: event.tags,
+            content: event.content,
+            sig: signature
+          };
+          
+          console.log('✓ Event signed:', finalEvent.id.slice(0, 16) + '...');
+          
+          // Publish to relays
+          const relays = [
+            'wss://relay.damus.io',
+            'wss://relay.primal.net',
+            'wss://nos.lol'
+          ];
+          
+          let successCount = 0;
+          
+          for (const relayUrl of relays) {
+            try {
+              await new Promise((resolve) => {
+                const ws = new WebSocket(relayUrl);
+                const timeout = setTimeout(() => {
+                  ws.close();
+                  console.log('✗ Timeout:', relayUrl);
+                  resolve(false);
+                }, 5000);
+                
+                ws.on('open', () => {
+                  clearTimeout(timeout);
+                  ws.send(JSON.stringify(["EVENT", finalEvent]));
+                  setTimeout(() => {
+                    ws.close();
+                    successCount++;
+                    console.log('✓ Published to', relayUrl);
+                    resolve(true);
+                  }, 500);
+                });
+                
+                ws.on('error', (err) => {
+                  clearTimeout(timeout);
+                  console.log('✗ Error:', relayUrl);
+                  resolve(false);
+                });
+              });
+            } catch(e) {
+              console.log('✗ Failed:', relayUrl);
             }
           }
+          
+          console.log(`\n✅ Published to ${successCount}/${relays.length} relays`);
+          if (successCount > 0) {
+            console.log('🔗 View at: https://snort.social/e/' + finalEvent.id);
+            console.log('\n🌸 Your garden is alive!');
+          } else {
+            console.log('\n❌ Failed to publish to any relay');
+            process.exit(1);
+          }
           EOF
-      - name: Install and run
-        run: |
-          npm install
-          node publisher.js
         env:
           NOSTR_PRIVATE_KEY: ${{ secrets.NOSTR_PRIVATE_KEY }}
