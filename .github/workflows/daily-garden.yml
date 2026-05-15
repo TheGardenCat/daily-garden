@@ -1,3 +1,5 @@
+# re-enabled schedule
+
 name: Daily Garden
 
 on:
